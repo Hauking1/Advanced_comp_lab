@@ -5,6 +5,7 @@ import time
 from scipy.sparse import csr_matrix
 from Task2 import to_cavity_matrix,marginal_matrix
 import numba as nb
+import scipy.sparse.linalg as slin
 
 
 def spectral_density(lamnbda:float,N:int,epsilon:float,to_cavity_mat:csr_matrix,max_iter:int,threshold:float,energies:np.ndarray,marginal_mat:csr_matrix,c:int,rep_e:np.ndarray)->float:
@@ -99,6 +100,9 @@ def pd_spectral_densitiy(cavities:np.ndarray):
 def pd_typical_cavity_variance(cavities:np.ndarray)->float:
     return np.exp(np.average(np.log(np.imag(np.divide(1j,cavities)))))
 
+def inverse_participation_ratio(vectors:np.ndarray,N:int):
+    return N*np.sum(np.pow(vectors,4),axis=0)/np.pow(np.sum(np.pow(vectors,2),axis=0),2)
+
 def Task_3_2(save_plots_to:str):
     N = 2**10
     connectivity = 3
@@ -187,47 +191,43 @@ def Task_3_3(save_plots_to:str):
     #plt.show()
     plt.close()
 
-def Task_3_4(save_plots_to:str):
-    precision = 5*1e-5
-    max_itter = 100000
-    populationsizes = [10**3,5*10**3,10**4]
-    c = 3
-    disorders = np.arange(10,21)
-    lambd = 0
-    epsilon = 1e-300
-    start_pd = time.time()
-    typ_gs = np.zeros((len(populationsizes),len(disorders)))
-    #res_measurements = np.zeros((len(disorders),n_measurements),dtype=complex)
-    for index_pop,populationsize in enumerate(populationsizes):
-        for index_dis,disorder in enumerate(disorders):
-            start = time.time()
-            equilibriums_marginal = pd_equalibrium_single_lambda(precision,max_itter,populationsize,c,disorder,lambd,epsilon)
-            typ_gs[index_pop][index_dis] = pd_typical_cavity_variance(equilibriums_marginal)
-            print(f"disorder: {disorder} at pop_size: {populationsize} done after: {time.time()-start:.2f} seconds")
-        #typ_gs[index_pop] = np.array([pd_typical_cavity_variance(res_measurements[index]) for index in range(len(disorders))])
-        print(f"populationsize: {populationsize} done :)")
-    end_pd = time.time()-start_pd
-    
-    print("\n")
-    print(f"time for populationdynamics: {end_pd:.2f}")
+def Task_3_6(save_plots_to:str,data_path:str):
+    lamb = 0.
+    disorders = np.arange(5,10.1,0.5)
+    mat_sizes = [2**10,2**11,2**12]
+    num_instances = 10
+    c=3
+    num_eigenvecs = 6
 
-    for index in range(len(populationsizes)):
-        plt.plot(disorders,typ_gs[index],label = f"pop.size: {populationsizes[index]}")
+    results = np.zeros((len(mat_sizes),len(disorders)))
+    for index_size in range(len(mat_sizes)):
+        for index_dis in range(len(disorders)):
+            for_average = 0
+            start = time.time()
+            for _ in range(num_instances):
+                adjacency_matrix:csr_matrix = netx.adjacency_matrix(netx.random_regular_graph(c,mat_sizes[index_size]),dtype=np.bool)
+                energies = (np.random.rand(mat_sizes[index_size])-0.5)*disorders[index_dis]
+                hamiltonian:csr_matrix = -1*adjacency_matrix
+                hamiltonian.setdiag(energies)
+                for_average += np.sum(inverse_participation_ratio(slin.eigsh(hamiltonian,sigma=lamb,k=num_eigenvecs)[1],mat_sizes[index_size]))/num_eigenvecs
+            results[index_size][index_dis]=for_average/num_instances
+            print(f"time: {time.time()-start:.2f} for dis: {disorders[index_dis]}, mat.size: {mat_sizes[index_size]}")
+    for index_size in range(len(mat_sizes)):
+        plt.plot(disorders,results[index_size],label=f"mat size: {mat_sizes[index_size]}")
     plt.grid()
     plt.legend()
-    plt.xlabel("Disorder: W")
-    plt.ylabel(r"$g^{typ}$")
-    plt.yscale("log")
-    plt.title(r"$g^{typ}$ for $\epsilon=$"+f"{epsilon:.0e} and for different populationsizes")
-    plt.savefig(save_plots_to+"Task_3_4")
+    plt.xlabel("Disorder")
+    plt.ylabel("mean IRP")
+    plt.title("Mean IRP for different matrix sizes plotted over disorder")
+    plt.savefig(save_plots_to+f"Task_6_{num_instances}.png")
     plt.show()
     plt.close()
+
 
 if __name__=="__main__":
     print("Hello :)")
     directory_path = "\\".join(__file__.split("\\")[:-1])+"\\"+"plots\\"
+    data_path = "\\".join(__file__.split("\\")[:-1])+"\\"+"data\\"
     #Task_3_2(directory_path)
     #Task_3_3(directory_path)
-    Task_3_4(directory_path)
-
-
+    Task_3_6(directory_path,data_path)

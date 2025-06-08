@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 if __name__=="__main__":
     plot_directory_path = "\\".join(__file__.split("\\")[:-1])+"\\"+"plots\\"
     data_directory_path = "\\".join(__file__.split("\\")[:-1])+"\\"+"data\\"
-    with open(data_directory_path+"Task_3_4_10000.txt") as file:
+    with open(data_directory_path+"Task_3_4_50000.txt") as file:
         data = file.readlines()
     splitted = [line.strip("\n").split("\t") for line in data]
     header = splitted[0]
