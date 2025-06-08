@@ -91,8 +91,9 @@ def const_fast_3_4(num_itter:int,populationsize:int,c:int,disorder:float,lambd:f
 @nb.njit(parallel=True,nogil=True)
 def parrallel_const_fast_3_4(num_itter:int,populationsize:int,c:int,disorders:np.ndarray,lambd:float,epsilon:float):
     res = np.zeros(len(disorders))
-    for index_dis,disorder in enumerate(disorders):
-        res[index_dis] = pd_typical_cavity_variance(const_pd_equalibrium_single_lambda(num_itter,populationsize,c,disorder,lambd,epsilon))
+    length_disorder = len(disorders)
+    for index in nb.prange(length_disorder):
+        res[index] = pd_typical_cavity_variance(const_pd_equalibrium_single_lambda(num_itter,populationsize,c,disorders[index],lambd,epsilon))
     return res
 
 @nb.njit()
