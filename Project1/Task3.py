@@ -6,6 +6,9 @@ from scipy.sparse import csr_matrix
 from Task2 import to_cavity_matrix,marginal_matrix
 import numba as nb
 import scipy.sparse.linalg as slin
+import creat_RDG_adj_mat as RDG
+import test_numba_eigs_solver as tnes
+
 
 
 def spectral_density(lamnbda:float,N:int,epsilon:float,to_cavity_mat:csr_matrix,max_iter:int,threshold:float,energies:np.ndarray,marginal_mat:csr_matrix,c:int,rep_e:np.ndarray)->float:
@@ -100,6 +103,7 @@ def pd_spectral_densitiy(cavities:np.ndarray):
 def pd_typical_cavity_variance(cavities:np.ndarray)->float:
     return np.exp(np.average(np.log(np.imag(np.divide(1j,cavities)))))
 
+@nb.njit()
 def inverse_participation_ratio(vectors:np.ndarray,N:int):
     return N*np.sum(np.pow(vectors,4),axis=0)/np.pow(np.sum(np.pow(vectors,2),axis=0),2)
 
@@ -191,27 +195,34 @@ def Task_3_3(save_plots_to:str):
     #plt.show()
     plt.close()
 
+@nb.njit(parallel=True,nogil=True)
+def parallel_task_3_6(mat_sizes:np.ndarray,c:int,disorders:np.ndarray,num_instances:int,lamb:float,num_eigenvecs:int)->np.ndarray:
+    results = np.zeros((len(mat_sizes),len(disorders)))
+    for index_size in nb.prange(len(mat_sizes)):
+        for index_dis in nb.prange(len(disorders)):
+            for_average = 0
+            for _ in range(num_instances):
+                rows,cols,data = RDG.generate_rrg_np(mat_sizes[index_size],c)
+                energies = (np.random.rand(mat_sizes[index_size])-0.5)*disorders[index_dis]
+                data = -1*data  #making the adj. mat into the hamiltonian
+                h_rows,h_cols,h_data = RDG.set_diag(mat_sizes[index_size],rows,cols,data,energies)
+                h_data,h_ind,h_indptr = tnes.coo_to_csr(h_rows,h_cols,h_data,mat_sizes[index_size])
+                eig_vecs = tnes.block_inverse_iteration_csr(h_data,h_ind,h_indptr,lamb,num_eigenvecs,10e-8,100,10e-8,200)[1]
+                for_average += np.sum(inverse_participation_ratio(eig_vecs,mat_sizes[index_size]))/num_eigenvecs
+            results[index_size][index_dis]=for_average/num_instances
+    return results
+
+
 def Task_3_6(save_plots_to:str,data_path:str):
     lamb = 0.
-    disorders = np.arange(5,10.1,0.5)
-    mat_sizes = [2**10,2**11,2**12]
+    disorders = np.arange(5,10.1,0.1)
+    mat_sizes = np.array([2**10,2**11,2**12])
     num_instances = 10
     c=3
     num_eigenvecs = 6
-
-    results = np.zeros((len(mat_sizes),len(disorders)))
-    for index_size in range(len(mat_sizes)):
-        for index_dis in range(len(disorders)):
-            for_average = 0
-            start = time.time()
-            for _ in range(num_instances):
-                adjacency_matrix:csr_matrix = netx.adjacency_matrix(netx.random_regular_graph(c,mat_sizes[index_size]),dtype=np.bool)
-                energies = (np.random.rand(mat_sizes[index_size])-0.5)*disorders[index_dis]
-                hamiltonian:csr_matrix = -1*adjacency_matrix
-                hamiltonian.setdiag(energies)
-                for_average += np.sum(inverse_participation_ratio(slin.eigsh(hamiltonian,sigma=lamb,k=num_eigenvecs)[1],mat_sizes[index_size]))/num_eigenvecs
-            results[index_size][index_dis]=for_average/num_instances
-            print(f"time: {time.time()-start:.2f} for dis: {disorders[index_dis]}, mat.size: {mat_sizes[index_size]}")
+    start_total = time.time()
+    results = parallel_task_3_6(mat_sizes,c,disorders,num_instances,lamb,num_eigenvecs)
+    print(f"took in total: {time.time()-start_total:.2f} seconds")
     for index_size in range(len(mat_sizes)):
         plt.plot(disorders,results[index_size],label=f"mat size: {mat_sizes[index_size]}")
     plt.grid()
@@ -231,3 +242,27 @@ if __name__=="__main__":
     #Task_3_2(directory_path)
     #Task_3_3(directory_path)
     Task_3_6(directory_path,data_path)
+
+    """Following for testing"""
+    """
+    adjacency_matrix:csr_matrix = netx.adjacency_matrix(netx.random_regular_graph(3,2**12),dtype=np.bool)
+    energies = (np.random.rand(2**12)-0.5)*5
+    hamiltonian:csr_matrix = -1*adjacency_matrix
+    hamiltonian.setdiag(energies)
+    start = time.time()
+    eig_vals,eig_vecs = slin.eigsh(hamiltonian,k=6,sigma=0.)
+    print(f"{time.time()-start:.3f}")
+    start=time.time()
+    #eig_vals_np,eig_vecs_np = np.linalg.eigh(hamiltonian.toarray())
+    print(f"{time.time()-start:.3f}")
+    start=time.time()
+    eigm,vecm = tnes.block_inverse_iteration_csr(hamiltonian.data,hamiltonian.indices,hamiltonian.indptr,0.,6,10e-8,100,10e-8,200)
+    print(f"{time.time()-start:.3f}")
+    start=time.time()
+    eig_vals_self,eig_vecs_self = tnes.block_inverse_iteration_csr(hamiltonian.data,hamiltonian.indices,hamiltonian.indptr,0.,6,10e-8,100,10e-8,200)
+    print(f"{time.time()-start:.3f}")
+    print(eig_vals)
+    print(eig_vals_self)
+    print(eig_vecs_self.shape)
+    print(eig_vecs.shape)
+    print(np.max(eig_vecs-eig_vecs_self,axis=0))"""
